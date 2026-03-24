@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 )
 
@@ -37,6 +38,13 @@ func main() {
 		log.Fatalf("get broadcaster id: %v", err)
 	}
 	log.Printf("Broadcaster: %s (ID: %s)", channel, broadcasterID)
+
+	if slices.Contains(os.Args[1:], "--list-rewards") {
+		if err := ListRewards(clientID, accessToken, broadcasterID); err != nil {
+			log.Fatalf("list rewards: %v", err)
+		}
+		return
+	}
 
 	// Database
 	db, err := NewDB(dbPath)

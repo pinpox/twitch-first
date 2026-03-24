@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 )
@@ -57,6 +59,9 @@ func LoadOrAuthorize(clientID, clientSecret, tokenPath string) (string, error) {
 }
 
 func deviceCodeAuth(clientID, clientSecret string) (*TokenResponse, error) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
 	// Step 1: Request device code
 	resp, err := http.PostForm(twitchDeviceCodeURL, url.Values{
 		"client_id": {clientID},
@@ -90,21 +95,26 @@ func deviceCodeAuth(clientID, clientSecret string) (*TokenResponse, error) {
 	if interval < 5 {
 		interval = 5
 	}
-	deadline := time.Now().Add(time.Duration(dc.ExpiresIn) * time.Second)
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+	defer ticker.Stop()
+	deadline := time.After(time.Duration(dc.ExpiresIn) * time.Second)
 
-	for time.Now().Before(deadline) {
-		time.Sleep(time.Duration(interval) * time.Second)
-
-		tok, done, err := pollDeviceToken(clientID, clientSecret, dc.DeviceCode)
-		if err != nil {
-			return nil, err
-		}
-		if done {
-			return tok, nil
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("interrupted")
+		case <-deadline:
+			return nil, fmt.Errorf("authorization timed out")
+		case <-ticker.C:
+			tok, done, err := pollDeviceToken(clientID, clientSecret, dc.DeviceCode)
+			if err != nil {
+				return nil, err
+			}
+			if done {
+				return tok, nil
+			}
 		}
 	}
-
-	return nil, fmt.Errorf("authorization timed out")
 }
 
 func pollDeviceToken(clientID, clientSecret, deviceCode string) (*TokenResponse, bool, error) {

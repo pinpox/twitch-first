@@ -76,7 +76,11 @@ func (e *EventSubClient) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 		log.Printf("EventSub WebSocket disconnected: %v, reconnecting in 5s...", err)
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
 	}
 }
 
@@ -87,13 +91,13 @@ func (e *EventSubClient) connect(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	// Close connection on context cancel to unblock the reader
+	go func() {
+		<-ctx.Done()
+		conn.Close()
+	}()
 
+	for {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("read: %w", err)

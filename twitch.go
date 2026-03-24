@@ -36,6 +36,46 @@ func twitchAPIPost(url, clientID, accessToken string, body any) error {
 	return nil
 }
 
+// ListRewards prints all custom channel point rewards for the given broadcaster.
+func ListRewards(clientID, accessToken, broadcasterID string) error {
+	url := fmt.Sprintf("https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id=%s", broadcasterID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Client-Id", clientID)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+			Cost  int    `json:"cost"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+
+	if len(result.Data) == 0 {
+		fmt.Println("No custom rewards found.")
+		return nil
+	}
+
+	fmt.Println("Custom rewards:")
+	for _, r := range result.Data {
+		fmt.Printf("  %-40s ID: %s (cost: %d)\n", r.Title, r.ID, r.Cost)
+	}
+	return nil
+}
+
 // GetBroadcasterID looks up a user ID by login name.
 func GetBroadcasterID(clientID, accessToken, login string) (string, error) {
 	url := fmt.Sprintf("https://api.twitch.tv/helix/users?login=%s", login)

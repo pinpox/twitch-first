@@ -38,7 +38,11 @@ func (b *IRCBot) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 		log.Printf("IRC disconnected: %v, reconnecting in 5s...", err)
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
 	}
 }
 
@@ -71,6 +75,12 @@ func (b *IRCBot) connect(ctx context.Context) error {
 	}
 
 	log.Printf("IRC joined #%s", b.channel)
+
+	// Close connection on context cancel to unblock the reader
+	go func() {
+		<-ctx.Done()
+		conn.Close()
+	}()
 
 	// Writer goroutine
 	go func() {

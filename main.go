@@ -26,7 +26,8 @@ func main() {
 	}
 
 	// Auth
-	accessToken, err := LoadOrAuthorize(clientID, clientSecret, tokenPath)
+	tm := NewTokenManager(clientID, clientSecret, tokenPath)
+	accessToken, err := tm.Init()
 	if err != nil {
 		log.Fatalf("auth: %v", err)
 	}
@@ -61,10 +62,10 @@ func main() {
 	if botName == "" {
 		botName = channel
 	}
-	irc := NewIRCBot(db, botName, accessToken, channel)
+	irc := NewIRCBot(db, tm, botName, accessToken, channel)
 
 	// EventSub (for channel point redemptions)
-	eventsub := NewEventSubClient(db, irc, clientID, accessToken, broadcasterID, rewardID)
+	eventsub := NewEventSubClient(db, irc, tm, clientID, accessToken, broadcasterID, rewardID)
 
 	var wg sync.WaitGroup
 	wg.Add(2)

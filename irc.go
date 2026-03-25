@@ -14,6 +14,7 @@ const twitchIRCAddr = "irc.chat.twitch.tv:6667"
 
 type IRCBot struct {
 	db       *DB
+	tm       *TokenManager
 	nick     string
 	token    string
 	channel  string
@@ -21,9 +22,10 @@ type IRCBot struct {
 	sendChan chan string
 }
 
-func NewIRCBot(db *DB, nick, token, channel string) *IRCBot {
+func NewIRCBot(db *DB, tm *TokenManager, nick, token, channel string) *IRCBot {
 	return &IRCBot{
 		db:       db,
+		tm:       tm,
 		nick:     nick,
 		token:    token,
 		channel:  strings.ToLower(channel),
@@ -38,6 +40,14 @@ func (b *IRCBot) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 		log.Printf("IRC disconnected: %v, reconnecting in 5s...", err)
+
+		// Refresh token before reconnecting
+		if newToken, err := b.tm.Refresh(); err != nil {
+			log.Printf("IRC token refresh failed: %v", err)
+		} else {
+			b.token = newToken
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

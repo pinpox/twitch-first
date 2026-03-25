@@ -179,6 +179,54 @@ func refreshToken(clientID, clientSecret, refresh string) (*TokenResponse, error
 	return &tok, nil
 }
 
+// TokenManager handles token storage and refresh.
+type TokenManager struct {
+	clientID     string
+	clientSecret string
+	tokenPath    string
+	current      TokenResponse
+}
+
+func NewTokenManager(clientID, clientSecret, tokenPath string) *TokenManager {
+	return &TokenManager{
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		tokenPath:    tokenPath,
+	}
+}
+
+// Init loads or authorizes and returns the initial access token.
+func (tm *TokenManager) Init() (string, error) {
+	tok, err := LoadOrAuthorize(tm.clientID, tm.clientSecret, tm.tokenPath)
+	if err != nil {
+		return "", err
+	}
+	// Read back the saved token to get the refresh token
+	data, err := os.ReadFile(tm.tokenPath)
+	if err == nil {
+		json.Unmarshal(data, &tm.current)
+	}
+	if tm.current.AccessToken == "" {
+		tm.current.AccessToken = tok
+	}
+	return tm.current.AccessToken, nil
+}
+
+// Refresh gets a new access token using the stored refresh token.
+func (tm *TokenManager) Refresh() (string, error) {
+	if tm.current.RefreshToken == "" {
+		return "", fmt.Errorf("no refresh token available")
+	}
+	newTok, err := refreshToken(tm.clientID, tm.clientSecret, tm.current.RefreshToken)
+	if err != nil {
+		return "", fmt.Errorf("refresh: %w", err)
+	}
+	tm.current = *newTok
+	saveToken(tm.tokenPath, newTok)
+	log.Println("Token refreshed successfully")
+	return newTok.AccessToken, nil
+}
+
 func saveToken(path string, tok *TokenResponse) {
 	data, _ := json.Marshal(tok)
 	if err := os.WriteFile(path, data, 0600); err != nil {

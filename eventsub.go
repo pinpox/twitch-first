@@ -17,6 +17,7 @@ const (
 type EventSubClient struct {
 	db            *DB
 	irc           *IRCBot
+	tm            *TokenManager
 	clientID      string
 	accessToken   string
 	broadcasterID string
@@ -58,10 +59,11 @@ type redemptionEvent struct {
 	} `json:"reward"`
 }
 
-func NewEventSubClient(db *DB, irc *IRCBot, clientID, accessToken, broadcasterID, rewardID string) *EventSubClient {
+func NewEventSubClient(db *DB, irc *IRCBot, tm *TokenManager, clientID, accessToken, broadcasterID, rewardID string) *EventSubClient {
 	return &EventSubClient{
 		db:            db,
 		irc:           irc,
+		tm:            tm,
 		clientID:      clientID,
 		accessToken:   accessToken,
 		broadcasterID: broadcasterID,
@@ -76,6 +78,14 @@ func (e *EventSubClient) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 		log.Printf("EventSub WebSocket disconnected: %v, reconnecting in 5s...", err)
+
+		// Refresh token before reconnecting
+		if newToken, err := e.tm.Refresh(); err != nil {
+			log.Printf("EventSub token refresh failed: %v", err)
+		} else {
+			e.accessToken = newToken
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

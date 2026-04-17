@@ -59,6 +59,12 @@ type redemptionEvent struct {
 	} `json:"reward"`
 }
 
+type raidEvent struct {
+	FromBroadcasterUserLogin string `json:"from_broadcaster_user_login"`
+	FromBroadcasterUserName  string `json:"from_broadcaster_user_name"`
+	Viewers                  int    `json:"viewers"`
+}
+
 func NewEventSubClient(db *DB, irc *IRCBot, tm *TokenManager, clientID, accessToken, broadcasterID, rewardID string) *EventSubClient {
 	return &EventSubClient{
 		db:            db,
@@ -131,7 +137,7 @@ func (e *EventSubClient) connect(ctx context.Context) error {
 			if err := e.subscribe(); err != nil {
 				return fmt.Errorf("subscribe: %w", err)
 			}
-			log.Println("Subscribed to channel point redemptions")
+			log.Println("Subscribed to channel point redemptions and raids")
 
 		case "session_keepalive":
 			// no-op, connection is alive
@@ -153,36 +159,42 @@ func (e *EventSubClient) handleNotification(payload json.RawMessage) {
 		return
 	}
 
-	if np.Subscription.Type != "channel.channel_points_custom_reward_redemption.add" {
-		return
+	switch np.Subscription.Type {
+	case "channel.channel_points_custom_reward_redemption.add":
+		var event redemptionEvent
+		if err := json.Unmarshal(np.Event, &event); err != nil {
+			log.Printf("unmarshal redemption event: %v", err)
+			return
+		}
+
+		// Filter by reward ID if configured
+		if e.rewardID != "" && event.Reward.ID != e.rewardID {
+			return
+		}
+
+		log.Printf("FIRST redeemed by %s (%s)", event.UserName, event.UserID)
+
+		if err := e.db.RecordFirst(event.UserID, event.UserName); err != nil {
+			log.Printf("record first: %v", err)
+			return
+		}
+
+		e.irc.Say(fmt.Sprintf("🏆 %s claimed FIRST!", event.UserName))
+
+	case "channel.raid":
+		var event raidEvent
+		if err := json.Unmarshal(np.Event, &event); err != nil {
+			log.Printf("unmarshal raid event: %v", err)
+			return
+		}
+
+		log.Printf("Raided by %s with %d viewers", event.FromBroadcasterUserName, event.Viewers)
+		e.irc.Say(fmt.Sprintf("/shoutout %s", event.FromBroadcasterUserLogin))
 	}
-
-	var event redemptionEvent
-	if err := json.Unmarshal(np.Event, &event); err != nil {
-		log.Printf("unmarshal redemption event: %v", err)
-		return
-	}
-
-	// Filter by reward ID if configured
-	if e.rewardID != "" && event.Reward.ID != e.rewardID {
-		return
-	}
-
-	log.Printf("FIRST redeemed by %s (%s)", event.UserName, event.UserID)
-
-	if err := e.db.RecordFirst(event.UserID, event.UserName); err != nil {
-		log.Printf("record first: %v", err)
-		return
-	}
-
-	e.irc.Say(fmt.Sprintf("🏆 %s claimed FIRST!", event.UserName))
 }
 
 func (e *EventSubClient) subscribe() error {
-	type condition struct {
-		BroadcasterUserID string `json:"broadcaster_user_id"`
-		RewardID          string `json:"reward_id,omitempty"`
-	}
+	type condition map[string]string
 	type transport struct {
 		Method    string `json:"method"`
 		SessionID string `json:"session_id"`
@@ -194,18 +206,34 @@ func (e *EventSubClient) subscribe() error {
 		Transport transport `json:"transport"`
 	}
 
-	body := subRequest{
-		Type:    "channel.channel_points_custom_reward_redemption.add",
-		Version: "1",
-		Condition: condition{
-			BroadcasterUserID: e.broadcasterID,
-			RewardID:          e.rewardID,
-		},
-		Transport: transport{
-			Method:    "websocket",
-			SessionID: e.sessionID,
-		},
+	tp := transport{
+		Method:    "websocket",
+		SessionID: e.sessionID,
 	}
 
-	return twitchAPIPost("https://api.twitch.tv/helix/eventsub/subscriptions", e.clientID, e.accessToken, body)
+	// Subscribe to channel point redemptions
+	redemptionCond := condition{"broadcaster_user_id": e.broadcasterID}
+	if e.rewardID != "" {
+		redemptionCond["reward_id"] = e.rewardID
+	}
+	if err := twitchAPIPost("https://api.twitch.tv/helix/eventsub/subscriptions", e.clientID, e.accessToken, subRequest{
+		Type:      "channel.channel_points_custom_reward_redemption.add",
+		Version:   "1",
+		Condition: redemptionCond,
+		Transport: tp,
+	}); err != nil {
+		return fmt.Errorf("subscribe redemptions: %w", err)
+	}
+
+	// Subscribe to raids
+	if err := twitchAPIPost("https://api.twitch.tv/helix/eventsub/subscriptions", e.clientID, e.accessToken, subRequest{
+		Type:      "channel.raid",
+		Version:   "1",
+		Condition: condition{"to_broadcaster_user_id": e.broadcasterID},
+		Transport: tp,
+	}); err != nil {
+		return fmt.Errorf("subscribe raids: %w", err)
+	}
+
+	return nil
 }

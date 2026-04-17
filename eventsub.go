@@ -180,6 +180,7 @@ func (e *EventSubClient) handleNotification(payload json.RawMessage) {
 		}
 
 		e.irc.Say(fmt.Sprintf("🏆 %s claimed FIRST!", event.UserName))
+		e.irc.SayLeaderboard()
 
 	case "channel.raid":
 		var event raidEvent

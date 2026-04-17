@@ -123,6 +123,31 @@ func (b *IRCBot) connect(ctx context.Context) error {
 	return scanner.Err()
 }
 
+func (b *IRCBot) SayLeaderboard() {
+	entries, err := b.db.Leaderboard(10)
+	if err != nil {
+		log.Printf("leaderboard query: %v", err)
+		return
+	}
+
+	if len(entries) == 0 {
+		b.Say("No one has claimed FIRST yet!")
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("FIRST leaderboard: ")
+	medals := []string{"🥇", "🥈", "🥉", "4.", "5.", "6.", "7.", "8.", "9.", "10."}
+	for i, e := range entries {
+		if i > 0 {
+			sb.WriteString(" | ")
+		}
+		fmt.Fprintf(&sb, "%s %s (%d)", medals[i], e.UserName, e.Count)
+	}
+
+	b.Say(sb.String())
+}
+
 func (b *IRCBot) handleMessage(line string) {
 	// Parse PRIVMSG: :nick!user@host PRIVMSG #channel :message
 	if !strings.Contains(line, "PRIVMSG") {
@@ -139,26 +164,5 @@ func (b *IRCBot) handleMessage(line string) {
 		return
 	}
 
-	entries, err := b.db.Leaderboard(5)
-	if err != nil {
-		log.Printf("leaderboard query: %v", err)
-		return
-	}
-
-	if len(entries) == 0 {
-		b.Say("No one has claimed FIRST yet!")
-		return
-	}
-
-	var sb strings.Builder
-	sb.WriteString("FIRST leaderboard: ")
-	medals := []string{"🥇", "🥈", "🥉", "4.", "5."}
-	for i, e := range entries {
-		if i > 0 {
-			sb.WriteString(" | ")
-		}
-		fmt.Fprintf(&sb, "%s %s (%d)", medals[i], e.UserName, e.Count)
-	}
-
-	b.Say(sb.String())
+	b.SayLeaderboard()
 }

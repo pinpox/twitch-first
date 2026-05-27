@@ -18,6 +18,7 @@ type EventSubClient struct {
 	db            *DB
 	irc           *IRCBot
 	tm            *TokenManager
+	discord       *DiscordWebhook
 	clientID      string
 	accessToken   string
 	broadcasterID string
@@ -65,11 +66,12 @@ type raidEvent struct {
 	Viewers                  int    `json:"viewers"`
 }
 
-func NewEventSubClient(db *DB, irc *IRCBot, tm *TokenManager, clientID, accessToken, broadcasterID, rewardID string) *EventSubClient {
+func NewEventSubClient(db *DB, irc *IRCBot, tm *TokenManager, discord *DiscordWebhook, clientID, accessToken, broadcasterID, rewardID string) *EventSubClient {
 	return &EventSubClient{
 		db:            db,
 		irc:           irc,
 		tm:            tm,
+		discord:       discord,
 		clientID:      clientID,
 		accessToken:   accessToken,
 		broadcasterID: broadcasterID,
@@ -181,6 +183,13 @@ func (e *EventSubClient) handleNotification(payload json.RawMessage) {
 
 		e.irc.Say(fmt.Sprintf("🏆 %s claimed FIRST!", event.UserName))
 		e.irc.SayLeaderboard()
+
+		rank, count, err := e.db.UserRank(event.UserName)
+		if err != nil {
+			log.Printf("user rank lookup: %v", err)
+		} else {
+			go e.discord.LogFirst(event.UserName, rank, count, time.Now())
+		}
 
 	case "channel.raid":
 		var event raidEvent

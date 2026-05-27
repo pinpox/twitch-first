@@ -148,9 +148,33 @@ func (b *IRCBot) SayLeaderboard() {
 	b.Say(sb.String())
 }
 
+// SayUserRank announces the given user's rank and FIRST count.
+// If the user has no recorded FIRSTs, it says so.
+func (b *IRCBot) SayUserRank(userName string) {
+	rank, count, err := b.db.UserRank(userName)
+	if err != nil {
+		log.Printf("user rank query: %v", err)
+		return
+	}
+	if count == 0 {
+		b.Say(fmt.Sprintf("@%s you haven't claimed FIRST yet — get in there!", userName))
+		return
+	}
+	suffix := "s"
+	if count == 1 {
+		suffix = ""
+	}
+	b.Say(fmt.Sprintf("@%s you are #%d with %d FIRST%s", userName, rank, count, suffix))
+}
+
 func (b *IRCBot) handleMessage(line string) {
 	// Parse PRIVMSG: :nick!user@host PRIVMSG #channel :message
 	if !strings.Contains(line, "PRIVMSG") {
+		return
+	}
+
+	prefix, _, ok := strings.Cut(line, " ")
+	if !ok || !strings.HasPrefix(prefix, ":") {
 		return
 	}
 
@@ -164,5 +188,13 @@ func (b *IRCBot) handleMessage(line string) {
 		return
 	}
 
+	// Extract nick from prefix `:nick!user@host`
+	bang := strings.Index(prefix, "!")
+	if bang < 2 {
+		return
+	}
+	nick := prefix[1:bang]
+
 	b.SayLeaderboard()
+	b.SayUserRank(nick)
 }

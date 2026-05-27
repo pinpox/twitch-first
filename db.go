@@ -70,6 +70,33 @@ func (d *DB) Leaderboard(limit int) ([]LeaderboardEntry, error) {
 	return entries, rows.Err()
 }
 
+// UserRank returns the user's competition rank and total FIRST count.
+// Rank is 1-based; tied users share the same rank. A returned count of 0
+// means the user has never claimed FIRST (rank is then 0).
+// The lookup is case-insensitive on the stored user_name.
+func (d *DB) UserRank(userName string) (rank, count int, err error) {
+	err = d.db.QueryRow(
+		`SELECT COUNT(*) FROM firsts WHERE LOWER(user_name) = LOWER(?)`,
+		userName,
+	).Scan(&count)
+	if err != nil || count == 0 {
+		return 0, count, err
+	}
+
+	err = d.db.QueryRow(`
+		SELECT COUNT(*) FROM (
+			SELECT user_id, COUNT(*) AS c
+			FROM firsts
+			GROUP BY user_id
+			HAVING c > ?
+		)
+	`, count).Scan(&rank)
+	if err != nil {
+		return 0, 0, err
+	}
+	return rank + 1, count, nil
+}
+
 func (d *DB) Close() error {
 	return d.db.Close()
 }

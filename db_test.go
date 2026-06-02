@@ -72,3 +72,53 @@ func TestUserRankEmpty(t *testing.T) {
 		t.Errorf("UserRank on empty db = (%d, %d), want (0, 0)", rank, count)
 	}
 }
+
+func TestLeaderboard(t *testing.T) {
+	db := newTestDB(t)
+
+	record(t, db, "1", "Alice", 5)
+	record(t, db, "2", "Bob", 3)
+	record(t, db, "3", "Carol", 2)
+	record(t, db, "4", "Dave", 1)
+
+	// A positive limit caps the result (used by IRC).
+	top, err := db.Leaderboard(2)
+	if err != nil {
+		t.Fatalf("Leaderboard(2): %v", err)
+	}
+	if len(top) != 2 {
+		t.Fatalf("Leaderboard(2) = %d entries, want 2", len(top))
+	}
+	if top[0].UserName != "Alice" || top[0].Count != 5 {
+		t.Errorf("top[0] = %+v, want Alice/5", top[0])
+	}
+	if top[1].UserName != "Bob" || top[1].Count != 3 {
+		t.Errorf("top[1] = %+v, want Bob/3", top[1])
+	}
+
+	// FullLeaderboard returns every user, ignoring any cap (used by Discord).
+	full, err := db.FullLeaderboard()
+	if err != nil {
+		t.Fatalf("FullLeaderboard: %v", err)
+	}
+	wantOrder := []string{"Alice", "Bob", "Carol", "Dave"}
+	if len(full) != len(wantOrder) {
+		t.Fatalf("FullLeaderboard = %d entries, want %d", len(full), len(wantOrder))
+	}
+	for i, name := range wantOrder {
+		if full[i].UserName != name {
+			t.Errorf("full[%d] = %q, want %q", i, full[i].UserName, name)
+		}
+	}
+}
+
+func TestFullLeaderboardEmpty(t *testing.T) {
+	db := newTestDB(t)
+	entries, err := db.FullLeaderboard()
+	if err != nil {
+		t.Fatalf("FullLeaderboard: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("FullLeaderboard on empty db = %d entries, want 0", len(entries))
+	}
+}

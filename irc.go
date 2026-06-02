@@ -86,26 +86,26 @@ func (b *IRCBot) connect(ctx context.Context) error {
 
 	log.Printf("IRC joined #%s", b.channel)
 
-	// Close connection on context cancel to unblock the reader
-	go func() {
-		<-ctx.Done()
-		conn.Close()
-	}()
+	// done is closed when this connection ends so the goroutines below stop
+	// instead of outliving conn. Without it the writer would survive every
+	// reconnect, accumulate across connections, and race other writers for
+	// messages on the shared sendChan — a stale writer wins, fails to write to
+	// its closed socket, and silently drops the message (only "irc send" logs).
+	done := make(chan struct{})
+	defer close(done)
 
-	// Writer goroutine
+	// Close the connection on context cancel (to unblock the reader); also stop
+	// when this connection ends so the goroutine doesn't leak across reconnects.
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-b.sendChan:
-				if err := send(msg); err != nil {
-					log.Printf("irc send: %v", err)
-					return
-				}
-			}
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
 		}
 	}()
+
+	// Exactly one writer per connection, bound to this connection's lifetime.
+	go b.writeLoop(ctx, send, done)
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
@@ -121,6 +121,27 @@ func (b *IRCBot) connect(ctx context.Context) error {
 		b.handleMessage(line)
 	}
 	return scanner.Err()
+}
+
+// writeLoop drains queued chat messages onto a single connection via send. It
+// returns when the context is cancelled, when done is closed (the connection
+// ended), or when a write fails. Binding it to done is what stops a writer from
+// surviving a reconnect and stealing messages off sendChan that it can no
+// longer deliver.
+func (b *IRCBot) writeLoop(ctx context.Context, send func(string) error, done <-chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case msg := <-b.sendChan:
+			if err := send(msg); err != nil {
+				log.Printf("irc send: %v", err)
+				return
+			}
+		}
+	}
 }
 
 func (b *IRCBot) SayLeaderboard() {

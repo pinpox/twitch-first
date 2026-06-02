@@ -184,11 +184,13 @@ func (e *EventSubClient) handleNotification(payload json.RawMessage) {
 		e.irc.Say(fmt.Sprintf("🏆 %s claimed FIRST!", event.UserName))
 		e.irc.SayLeaderboard()
 
-		rank, count, err := e.db.UserRank(event.UserName)
-		if err != nil {
-			log.Printf("user rank lookup: %v", err)
-		} else {
-			go e.discord.LogFirst(event.UserName, rank, count, time.Now())
+		if e.discord != nil {
+			entries, err := e.db.FullLeaderboard()
+			if err != nil {
+				log.Printf("discord leaderboard lookup: %v", err)
+			} else {
+				go e.discord.LogLeaderboard(event.UserName, entries, time.Now())
+			}
 		}
 
 	case "channel.raid":

@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,7 +15,7 @@ import (
 func TestDiscordWebhookNilSafe(t *testing.T) {
 	var d *DiscordWebhook // nil
 	// Must not panic.
-	d.LogFirst("alice", 1, 5, time.Now())
+	d.LogLeaderboard("alice", nil, time.Now())
 }
 
 func TestNewDiscordWebhookEmpty(t *testing.T) {
@@ -22,7 +24,7 @@ func TestNewDiscordWebhookEmpty(t *testing.T) {
 	}
 }
 
-func TestDiscordWebhookLogFirstPayload(t *testing.T) {
+func TestDiscordWebhookLogLeaderboardPayload(t *testing.T) {
 	var (
 		mu       sync.Mutex
 		gotBody  []byte
@@ -52,7 +54,21 @@ func TestDiscordWebhookLogFirstPayload(t *testing.T) {
 	}
 
 	at := time.Date(2026, 5, 27, 12, 34, 56, 0, time.UTC)
-	d.LogFirst("Alice", 2, 7, at)
+	entries := []LeaderboardEntry{
+		{UserName: "Alice", Count: 12},
+		{UserName: "Bob", Count: 11},
+		{UserName: "Carol", Count: 10},
+		{UserName: "Dave", Count: 9},
+		{UserName: "Eve", Count: 8},
+		{UserName: "Frank", Count: 7},
+		{UserName: "Grace", Count: 6},
+		{UserName: "Heidi", Count: 5},
+		{UserName: "Ivan", Count: 4},
+		{UserName: "Judy", Count: 3},
+		{UserName: "Mallory", Count: 2},
+		{UserName: "Niaj", Count: 1},
+	}
+	d.LogLeaderboard("Alice", entries, at)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -81,19 +97,21 @@ func TestDiscordWebhookLogFirstPayload(t *testing.T) {
 	if e.Timestamp != "2026-05-27T12:34:56Z" {
 		t.Errorf("timestamp = %q", e.Timestamp)
 	}
-	wantFields := map[string]string{"Total": "7", "Rank": "#2"}
-	for _, f := range e.Fields {
-		want, ok := wantFields[f.Name]
-		if !ok {
-			t.Errorf("unexpected field %q", f.Name)
-			continue
-		}
-		if f.Value != want {
-			t.Errorf("field %s = %q, want %q", f.Name, f.Value, want)
-		}
-		delete(wantFields, f.Name)
+	expectedRanks := []string{"🥇", "🥈", "🥉", "4.", "5.", "6.", "7.", "8.", "9.", "10.", "11.", "12."}
+	lines := strings.Split(e.Description, "\n")
+	if len(lines) != len(entries) {
+		t.Fatalf("description has %d lines, want %d:\n%s", len(lines), len(entries), e.Description)
 	}
-	if len(wantFields) != 0 {
-		t.Errorf("missing fields: %v", wantFields)
+	for i, ent := range entries {
+		line := lines[i]
+		if !strings.HasPrefix(line, expectedRanks[i]+" ") {
+			t.Errorf("line %d = %q, want rank prefix %q", i, line, expectedRanks[i])
+		}
+		if !strings.Contains(line, ent.UserName) {
+			t.Errorf("line %d = %q, missing user %q", i, line, ent.UserName)
+		}
+		if want := "(" + strconv.Itoa(ent.Count) + ")"; !strings.Contains(line, want) {
+			t.Errorf("line %d = %q, missing count %q", i, line, want)
+		}
 	}
 }

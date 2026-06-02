@@ -46,7 +46,13 @@ func (d *DB) RecordFirst(userID, userName string) error {
 	return err
 }
 
+// Leaderboard returns up to `limit` users ranked by FIRST count, highest first.
+// A non-positive limit returns every entry (SQLite treats a negative LIMIT as
+// unbounded).
 func (d *DB) Leaderboard(limit int) ([]LeaderboardEntry, error) {
+	if limit <= 0 {
+		limit = -1
+	}
 	rows, err := d.db.Query(`
 		SELECT user_name, COUNT(*) as cnt
 		FROM firsts
@@ -68,6 +74,11 @@ func (d *DB) Leaderboard(limit int) ([]LeaderboardEntry, error) {
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
+}
+
+// FullLeaderboard returns every user ranked by FIRST count, highest first.
+func (d *DB) FullLeaderboard() ([]LeaderboardEntry, error) {
+	return d.Leaderboard(-1)
 }
 
 // UserRank returns the user's competition rank and total FIRST count.

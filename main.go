@@ -64,7 +64,7 @@ func main() {
 	}
 	irc := NewIRCBot(db, tm, botName, accessToken, channel)
 
-	// Discord webhook (optional: full event log)
+	// Discord webhook (optional: posts the full leaderboard on each FIRST)
 	discord := NewDiscordWebhook(os.Getenv("DISCORD_WEBHOOK_URL"))
 	if discord != nil {
 		log.Println("Discord webhook configured")
